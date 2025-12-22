@@ -34,7 +34,7 @@ class EncryptionMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         
         # Kiểm tra xem path có cần mã hóa không
-        if not self._should_encrypt(request.path):
+        if not self._should_encrypt(request.url.path):
             return response
         
         # Chỉ encrypt response 200 và content-type là JSON
@@ -66,7 +66,7 @@ class EncryptionMiddleware(BaseHTTPMiddleware):
             encrypted_response = encryption_service.encrypt_response(original_data)
             
             # Log để debug (không log data thật)
-            logger.info(f"Encrypted response for: {request.path}")
+            logger.info(f"Encrypted response for: {request.url.path}")
             
             # Trả về response đã mã hóa
             return JSONResponse(
