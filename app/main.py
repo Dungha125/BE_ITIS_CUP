@@ -134,19 +134,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Encryption middleware - Mã hóa response cho các tournament endpoints
-# CHỈ MÃ HÓA response thành công (2xx), không mã hóa errors (4xx, 5xx)
-app.add_middleware(
-    EncryptionMiddleware,
-    encrypted_paths=[
-        "/api/tournament/register",
-        "/api/tournament/create-payment",
-        "/api/tournament/team-status",
-        "/api/tournament/my-teams",
-        "/api/tournament/teams",
-        "/api/tournament/verify-payment",
-    ]
-)
+# Encryption middleware - DISABLED (Tạm tắt để hệ thống hoạt động bình thường)
+# Bật lại khi cần bảo mật: Uncomment đoạn code dưới
+# app.add_middleware(
+#     EncryptionMiddleware,
+#     encrypted_paths=[
+#         "/api/tournament/register",
+#         "/api/tournament/create-payment",
+#         "/api/tournament/team-status",
+#         "/api/tournament/my-teams",
+#         "/api/tournament/teams",
+#         "/api/tournament/verify-payment",
+#     ]
+# )
 
 # Include routers
 app.include_router(tournament.router, prefix="/api")
