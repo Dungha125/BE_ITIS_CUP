@@ -27,6 +27,7 @@ class UserResponse(BaseModel):
     username: str
     email: str
     is_active: bool
+    is_admin: Optional[bool] = False  # Thêm field is_admin
     created_at: datetime
     updated_at: datetime
 

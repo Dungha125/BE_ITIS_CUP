@@ -52,6 +52,7 @@ async def register(
                 username=user.username,
                 email=user.email,
                 is_active=user.is_active,
+                is_admin=getattr(user, 'is_admin', False),
                 created_at=user.created_at,
                 updated_at=user.updated_at
             )
@@ -108,6 +109,7 @@ async def login(
                 username=user.username,
                 email=user.email,
                 is_active=user.is_active,
+                is_admin=getattr(user, 'is_admin', False),
                 created_at=user.created_at,
                 updated_at=user.updated_at
             )
@@ -148,6 +150,7 @@ async def get_current_user(
         username=user.username,
         email=user.email,
         is_active=user.is_active,
+        is_admin=getattr(user, 'is_admin', False),  # Lấy is_admin từ user, default False nếu chưa có
         created_at=user.created_at,
         updated_at=user.updated_at
     )

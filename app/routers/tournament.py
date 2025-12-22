@@ -434,6 +434,8 @@ async def get_team_status_by_order_id(
                 detail="Không tìm thấy đội với order_id này"
             )
         
+        logger.info(f"Team status check: order_id={order_id}, status={team.status.value}, paid_at={team.paid_at}")
+        
         return {
             "success": True,
             "data": {
