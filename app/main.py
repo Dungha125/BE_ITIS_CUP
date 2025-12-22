@@ -134,14 +134,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Encryption middleware - MÃ HÓA CHỈ CÁC API HIỂN THỊ THÔNG TIN
-# Chỉ encrypt các APIs có thông tin nhạy cảm (email, phone, student_id)
+# Encryption middleware - CHỈ MÃ HÓA 2 APIs
+# Chỉ encrypt danh sách teams để ẩn thông tin nhạy cảm (email, phone, student_id)
 app.add_middleware(
     EncryptionMiddleware,
     encrypted_paths=[
-        "/api/tournament/teams",        # Danh sách teams (có email, phone)
-        "/api/tournament/my-teams",     # Teams của user (có email, phone)
-        "/api/auth/me",                 # Thông tin user (có email)
+        "/api/tournament/teams",        # Danh sách teams
+        "/api/tournament/my-teams",     # Teams của user
     ]
 )
 
