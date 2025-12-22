@@ -8,6 +8,7 @@ from app.routers import tournament, auth
 from app.database import engine, Base, SessionLocal
 from app.models import User
 from app.services.auth_service import AuthService
+from app.middleware import EncryptionMiddleware
 import logging
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,19 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Encryption middleware - Mã hóa response cho các tournament endpoints
+app.add_middleware(
+    EncryptionMiddleware,
+    encrypted_paths=[
+        "/api/tournament/register",
+        "/api/tournament/create-payment",
+        "/api/tournament/team-status",
+        "/api/tournament/my-teams",
+        "/api/tournament/teams",
+        "/api/tournament/verify-payment",
+    ]
 )
 
 # Include routers
