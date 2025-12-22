@@ -68,11 +68,18 @@ class EncryptionMiddleware(BaseHTTPMiddleware):
             # Log để debug (không log data thật)
             logger.info(f"Encrypted response for: {request.url.path}")
             
-            # Trả về response đã mã hóa
+            # Trả về response đã mã hóa (không copy Content-Length header)
+            # Tạo response headers mới, bỏ qua Content-Length
+            response_headers = {}
+            for key, value in response.headers.items():
+                # Bỏ qua các headers liên quan đến content length và encoding
+                if key.lower() not in ['content-length', 'content-encoding', 'transfer-encoding']:
+                    response_headers[key] = value
+            
             return JSONResponse(
                 content=encrypted_response,
                 status_code=response.status_code,
-                headers=dict(response.headers)
+                headers=response_headers
             )
             
         except Exception as e:
