@@ -31,6 +31,7 @@ def upgrade() -> None:
     conn.commit()
     
     # Use the enum type (it should exist now, don't try to create it)
+    # Use postgresql.ENUM with create_type=False to prevent auto-creation
     team_status_enum = postgresql.ENUM('REGISTERED', 'PAID_CONFIRMED', 'PAID_REJECTED', name='team_status', create_type=False)
     
     # Create users table
@@ -50,7 +51,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
     
-    # Create teams table
+    # Create teams table (without enum column first to avoid auto-creation)
     op.create_table(
         'teams',
         sa.Column('id', sa.Integer(), nullable=False),
@@ -66,7 +67,6 @@ def upgrade() -> None:
         sa.Column('members_list_text', sa.Text(), nullable=True, comment='Danh sách thành viên (text backup)'),
         sa.Column('order_id', sa.String(length=100), nullable=False, comment='Mã đơn hàng MoMo duy nhất'),
         sa.Column('amount', sa.Numeric(precision=10, scale=2), nullable=False, server_default='0', comment='Số tiền đăng ký'),
-        sa.Column('status', sa.Enum('REGISTERED', 'PAID_CONFIRMED', 'PAID_REJECTED', name='team_status', native_enum=True, create_type=False), nullable=False, server_default='REGISTERED', comment='Trạng thái: REGISTERED=chưa thanh toán, PAID_CONFIRMED=đã thanh toán và trong 16 đội, PAID_REJECTED=đã thanh toán nhưng quá suất'),
         sa.Column('paid_at', sa.DateTime(timezone=True), nullable=True, comment='Thời điểm thanh toán thành công'),
         sa.Column('user_id', sa.Integer(), nullable=True, comment='ID đại diện đội (User)'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -74,6 +74,11 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     )
+    # Add enum column using raw SQL to avoid auto-creation
+    op.execute(sa.text("""
+        ALTER TABLE teams 
+        ADD COLUMN status team_status NOT NULL DEFAULT 'REGISTERED';
+    """))
     op.create_index(op.f('ix_teams_id'), 'teams', ['id'], unique=False)
     op.create_index(op.f('ix_teams_order_id'), 'teams', ['order_id'], unique=True)
     op.create_index(op.f('ix_teams_status'), 'teams', ['status'], unique=False)
