@@ -18,9 +18,20 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create team_status enum type
-    team_status_enum = postgresql.ENUM('REGISTERED', 'PAID_CONFIRMED', 'PAID_REJECTED', name='team_status', create_type=True)
-    team_status_enum.create(op.get_bind(), checkfirst=True)
+    # Create team_status enum type (only if it doesn't exist)
+    # Use DO block to safely create enum type
+    conn = op.get_bind()
+    conn.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE team_status AS ENUM ('REGISTERED', 'PAID_CONFIRMED', 'PAID_REJECTED');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """))
+    conn.commit()
+    
+    # Use the enum type (it should exist now, don't try to create it)
+    team_status_enum = postgresql.ENUM('REGISTERED', 'PAID_CONFIRMED', 'PAID_REJECTED', name='team_status', create_type=False)
     
     # Create users table
     op.create_table(
@@ -55,7 +66,7 @@ def upgrade() -> None:
         sa.Column('members_list_text', sa.Text(), nullable=True, comment='Danh sách thành viên (text backup)'),
         sa.Column('order_id', sa.String(length=100), nullable=False, comment='Mã đơn hàng MoMo duy nhất'),
         sa.Column('amount', sa.Numeric(precision=10, scale=2), nullable=False, server_default='0', comment='Số tiền đăng ký'),
-        sa.Column('status', team_status_enum, nullable=False, server_default='REGISTERED', comment='Trạng thái: REGISTERED=chưa thanh toán, PAID_CONFIRMED=đã thanh toán và trong 16 đội, PAID_REJECTED=đã thanh toán nhưng quá suất'),
+        sa.Column('status', sa.Enum('REGISTERED', 'PAID_CONFIRMED', 'PAID_REJECTED', name='team_status', native_enum=True, create_type=False), nullable=False, server_default='REGISTERED', comment='Trạng thái: REGISTERED=chưa thanh toán, PAID_CONFIRMED=đã thanh toán và trong 16 đội, PAID_REJECTED=đã thanh toán nhưng quá suất'),
         sa.Column('paid_at', sa.DateTime(timezone=True), nullable=True, comment='Thời điểm thanh toán thành công'),
         sa.Column('user_id', sa.Integer(), nullable=True, comment='ID đại diện đội (User)'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
