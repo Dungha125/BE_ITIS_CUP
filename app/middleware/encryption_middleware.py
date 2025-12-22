@@ -37,8 +37,9 @@ class EncryptionMiddleware(BaseHTTPMiddleware):
         if not self._should_encrypt(request.url.path):
             return response
         
-        # Chỉ encrypt response 200 và content-type là JSON
-        if response.status_code != 200:
+        # CHỈ ENCRYPT response thành công (2xx)
+        # Không encrypt error responses (4xx, 5xx) để frontend có thể đọc error message
+        if response.status_code < 200 or response.status_code >= 300:
             return response
         
         content_type = response.headers.get('content-type', '')

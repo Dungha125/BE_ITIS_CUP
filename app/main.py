@@ -135,6 +135,7 @@ app.add_middleware(
 )
 
 # Encryption middleware - Mã hóa response cho các tournament endpoints
+# CHỈ MÃ HÓA response thành công (2xx), không mã hóa errors (4xx, 5xx)
 app.add_middleware(
     EncryptionMiddleware,
     encrypted_paths=[
