@@ -134,19 +134,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Encryption middleware - DISABLED (Tạm tắt để hệ thống hoạt động bình thường)
-# Bật lại khi cần bảo mật: Uncomment đoạn code dưới
-# app.add_middleware(
-#     EncryptionMiddleware,
-#     encrypted_paths=[
-#         "/api/tournament/register",
-#         "/api/tournament/create-payment",
-#         "/api/tournament/team-status",
-#         "/api/tournament/my-teams",
-#         "/api/tournament/teams",
-#         "/api/tournament/verify-payment",
-#     ]
-# )
+# Encryption middleware - MÃ HÓA CHỈ CÁC API HIỂN THỊ THÔNG TIN
+# Chỉ encrypt các APIs có thông tin nhạy cảm (email, phone, student_id)
+app.add_middleware(
+    EncryptionMiddleware,
+    encrypted_paths=[
+        "/api/tournament/teams",        # Danh sách teams (có email, phone)
+        "/api/tournament/my-teams",     # Teams của user (có email, phone)
+        "/api/auth/me",                 # Thông tin user (có email)
+    ]
+)
 
 # Include routers
 app.include_router(tournament.router, prefix="/api")
