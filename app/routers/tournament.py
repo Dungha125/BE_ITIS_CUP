@@ -222,7 +222,11 @@ async def create_momo_payment(
         
         # Lấy IPN URL từ env và log để debug
         ipn_url = os.getenv('MOMO_NOTIFY_URL', '')
-        logger.info(f"Creating payment link: order_id={new_order_id}, return_url={return_url}, ipn_url={ipn_url}")
+        logger.info(f"🔔 Creating payment link: order_id={new_order_id}")
+        logger.info(f"🔔 Return URL: {return_url}")
+        logger.info(f"🔔 IPN URL (Webhook): {ipn_url}")
+        if not ipn_url:
+            logger.error("❌ MOMO_NOTIFY_URL is not set! IPN will not work!")
 
         # Tạo payment link từ MoMo với order_id mới
         payment_data = momo_service.create_payment_link(
@@ -262,6 +266,28 @@ async def create_momo_payment(
         )
 
 
+@router.get("/test-ipn")
+async def test_ipn_endpoint():
+    """
+    Test endpoint để kiểm tra IPN endpoint có hoạt động không
+    GET /api/tournament/test-ipn
+    """
+    ipn_url = os.getenv('MOMO_NOTIFY_URL', 'NOT SET')
+    return {
+        "status": "IPN endpoint is accessible",
+        "ipn_url": ipn_url,
+        "ipn_endpoint": f"{ipn_url if ipn_url != 'NOT SET' else 'https://beitiscup-production.up.railway.app/api/tournament/momo-ipn'}",
+        "message": "If you see this, the endpoint is working. Make sure this URL is configured in MoMo dashboard.",
+        "instructions": [
+            "1. Copy the ipn_endpoint URL above",
+            "2. Go to MoMo Business Dashboard",
+            "3. Navigate to Settings > Webhook Configuration",
+            "4. Set IPN URL to the ipn_endpoint value",
+            "5. Save the configuration"
+        ]
+    }
+
+
 @router.post("/momo-ipn")
 async def momo_ipn(
     request: Request,
@@ -277,9 +303,13 @@ async def momo_ipn(
     - Chỉ 16 đội đầu tiên được confirm, các đội sau bị reject
     """
     try:
+        # Log request headers để debug
+        logger.info(f"🔔 MoMo IPN Request received from: {request.client.host if request.client else 'unknown'}")
+        logger.info(f"MoMo IPN Headers: {dict(request.headers)}")
+        
         # Lấy data từ request body
         data = await request.json()
-        logger.info(f"MoMo IPN received: orderId={data.get('orderId')}, resultCode={data.get('resultCode')}")
+        logger.info(f"✅ MoMo IPN received: orderId={data.get('orderId')}, resultCode={data.get('resultCode')}, amount={data.get('amount')}")
         
         # Validate IPN data
         validation = momo_service.validate_ipn(data)

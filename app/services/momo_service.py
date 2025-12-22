@@ -125,7 +125,11 @@ class MomoService:
             }
 
             # Gửi request đến MoMo API
-            logger.info(f"Calling MoMo API: order_id={order_id}, amount={amount}, return_url={redirect_url}, ipn_url={self.notify_url}")
+            logger.info(f"🔔 Calling MoMo API: order_id={order_id}, amount={amount}")
+            logger.info(f"🔔 Return URL: {redirect_url}")
+            logger.info(f"🔔 IPN URL (Webhook): {self.notify_url}")
+            logger.info(f"⚠️  IMPORTANT: IPN URL must be accessible from internet!")
+            logger.info(f"⚠️  Make sure this URL is configured in MoMo Business Dashboard!")
             logger.info(f"MoMo Request Body (without signature): { {k: v for k, v in request_body.items() if k != 'signature'} }")
             
             with httpx.Client(timeout=30.0) as client:
