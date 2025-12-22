@@ -29,6 +29,10 @@ class MomoService:
             "MOMO_API_URL",
             "https://test-payment.momo.vn/v2/gateway/api/create"
         )
+        self.query_url = os.getenv(
+            "MOMO_QUERY_URL",
+            "https://test-payment.momo.vn/v2/gateway/api/query"
+        )
         self.partner_code = os.getenv("MOMO_PARTNER_CODE", "")
         self.access_key = os.getenv("MOMO_ACCESS_KEY", "")
         self.secret_key = os.getenv("MOMO_SECRET_KEY", "")
@@ -38,7 +42,7 @@ class MomoService:
         self.store_id = os.getenv("MOMO_STORE_ID", "ITISCUP")
         
         # Log config (không log secret_key)
-        logger.info(f"MoMo Service initialized: api_url={self.api_url}, partner_code={self.partner_code[:4]}..., has_secret_key={bool(self.secret_key)}")
+        logger.info(f"MoMo Service initialized: api_url={self.api_url}, query_url={self.query_url}, partner_code={self.partner_code[:4]}..., has_secret_key={bool(self.secret_key)}")
         logger.info(f"MoMo URLs: return_url={self.return_url}, notify_url={self.notify_url}")
         
         # Cảnh báo nếu IPN URL không được set
@@ -158,6 +162,7 @@ class MomoService:
                     "payUrl": pay_url,
                     "qrCodeUrl": qr_code_url,
                     "deeplink": deeplink,
+                    "requestId": request_id,  # Trả về request_id để lưu vào DB
                 }
 
             logger.error(
@@ -290,4 +295,64 @@ class MomoService:
         except Exception as e:
             logger.error(f"MoMo IPN Validation Exception: {str(e)}", exc_info=True)
             return result
+
+    def query_transaction(self, order_id: str, request_id: str) -> Optional[Dict]:
+        """
+        Query trạng thái giao dịch từ MoMo
+        
+        Args:
+            order_id: Mã đơn hàng
+            request_id: Request ID đã dùng khi tạo payment
+            
+        Returns:
+            Dict với thông tin giao dịch hoặc None nếu lỗi
+        """
+        try:
+            # Tạo raw signature string
+            raw_signature = (
+                f"accessKey={self.access_key}"
+                f"&orderId={order_id}"
+                f"&partnerCode={self.partner_code}"
+                f"&requestId={request_id}"
+            )
+            
+            # Tạo chữ ký HMAC SHA256
+            signature = hmac.new(
+                self.secret_key.encode('utf-8'),
+                raw_signature.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            
+            # Tạo request body
+            request_body = {
+                "partnerCode": self.partner_code,
+                "requestId": request_id,
+                "orderId": order_id,
+                "signature": signature,
+                "lang": "vi"
+            }
+            
+            logger.info(f"🔍 Querying MoMo transaction: order_id={order_id}, request_id={request_id}")
+            
+            # Gửi request đến MoMo Query API
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(self.query_url, json=request_body)
+            
+            if response.status_code != 200:
+                logger.error(
+                    f"MoMo Query API Error: status={response.status_code}, body={response.text}"
+                )
+                return None
+            
+            response_data = response.json()
+            logger.info(
+                f"MoMo Query Response: resultCode={response_data.get('resultCode')}, "
+                f"message={response_data.get('message')}"
+            )
+            
+            return response_data
+            
+        except Exception as e:
+            logger.error(f"MoMo Query Transaction Exception: {str(e)}", exc_info=True)
+            return None
 

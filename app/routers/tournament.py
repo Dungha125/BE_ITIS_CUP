@@ -134,7 +134,15 @@ async def register_team(
             if payment_data:
                 pay_url = payment_data.get("payUrl")
                 qr_code_url = payment_data.get("qrCodeUrl")
-                logger.info(f"Payment link created successfully: pay_url={pay_url is not None}, qr_code_url={qr_code_url is not None}")
+                request_id = payment_data.get("requestId")
+                
+                # Lưu request_id vào database để có thể query status sau
+                if request_id:
+                    team.request_id = request_id
+                    db.commit()
+                    db.refresh(team)
+                
+                logger.info(f"Payment link created successfully: pay_url={pay_url is not None}, qr_code_url={qr_code_url is not None}, request_id={request_id}")
             else:
                 logger.warning(f"Failed to create payment link for team {team.id}")
         except Exception as e:
@@ -242,6 +250,14 @@ async def create_momo_payment(
                 status_code=500,
                 detail="Không thể tạo link thanh toán. Vui lòng thử lại sau."
             )
+
+        # Lưu request_id vào database để có thể query status sau
+        request_id = payment_data.get("requestId")
+        if request_id:
+            team.request_id = request_id
+            db.commit()
+            db.refresh(team)
+            logger.info(f"Saved request_id for team {team.id}: {request_id}")
 
         return CreatePaymentResponse(
             success=True,
@@ -454,6 +470,8 @@ async def get_team_status_by_order_id(
     """
     Lấy trạng thái đội theo order_id (public endpoint để check sau thanh toán)
     GET /api/tournament/team-status/{order_id}
+    
+    Nếu đội chưa thanh toán và có request_id, tự động query MoMo để kiểm tra trạng thái
     """
     try:
         team = db.query(Team).filter(Team.order_id == order_id).first()
@@ -463,6 +481,55 @@ async def get_team_status_by_order_id(
                 status_code=404,
                 detail="Không tìm thấy đội với order_id này"
             )
+        
+        # Nếu đội chưa thanh toán và có request_id, tự động query MoMo
+        if team.status == TeamStatus.REGISTERED and team.request_id:
+            logger.info(f"🔍 Team {team.id} not yet paid, querying MoMo for status...")
+            
+            # Query MoMo để kiểm tra trạng thái thanh toán
+            momo_response = momo_service.query_transaction(team.order_id, team.request_id)
+            
+            if momo_response and momo_response.get("resultCode") == 0:
+                # Thanh toán thành công, cập nhật trạng thái
+                logger.info(f"✅ MoMo query successful: orderId={team.order_id}, payment confirmed")
+                
+                # Xử lý cập nhật trạng thái với race condition handling
+                from datetime import datetime
+                
+                try:
+                    # Lock và đếm số đội đã confirm
+                    confirmed_count = (
+                        db.query(func.count(Team.id))
+                        .filter(Team.status == TeamStatus.PAID_CONFIRMED)
+                        .with_for_update()
+                        .scalar()
+                    )
+                    
+                    # Lock team hiện tại
+                    team = (
+                        db.query(Team)
+                        .filter(Team.id == team.id)
+                        .with_for_update()
+                        .first()
+                    )
+                    
+                    # Kiểm tra lại status (tránh duplicate update)
+                    if not team.is_paid():
+                        if confirmed_count < Team.MAX_CONFIRMED_TEAMS:
+                            team.status = TeamStatus.PAID_CONFIRMED
+                            team.paid_at = datetime.now()
+                            logger.info(f"✅ Team {team.id} confirmed via MoMo query")
+                        else:
+                            team.status = TeamStatus.PAID_REJECTED
+                            team.paid_at = datetime.now()
+                            logger.info(f"⚠️  Team {team.id} rejected (over limit) via MoMo query")
+                        
+                        db.commit()
+                        db.refresh(team)
+                    
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"Error updating team status from MoMo query: {str(e)}")
         
         logger.info(f"Team status check: order_id={order_id}, status={team.status.value}, paid_at={team.paid_at}")
         
@@ -484,6 +551,157 @@ async def get_team_status_by_order_id(
         raise HTTPException(
             status_code=500,
             detail="Có lỗi xảy ra khi lấy trạng thái đội"
+        )
+
+
+@router.post("/verify-payment/{order_id}")
+async def verify_payment_status(
+    order_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Xác thực trạng thái thanh toán bằng cách query trực tiếp từ MoMo
+    POST /api/tournament/verify-payment/{order_id}
+    
+    Endpoint này cho phép frontend/user chủ động kích hoạt kiểm tra thanh toán
+    """
+    try:
+        team = db.query(Team).filter(Team.order_id == order_id).first()
+        
+        if not team:
+            raise HTTPException(
+                status_code=404,
+                detail="Không tìm thấy đội với order_id này"
+            )
+        
+        # Kiểm tra xem đã thanh toán chưa
+        if team.is_paid():
+            return {
+                "success": True,
+                "message": "Đội này đã được xác nhận thanh toán",
+                "data": {
+                    "order_id": team.order_id,
+                    "status": team.status.value,
+                    "paid_at": team.paid_at.isoformat() if team.paid_at else None,
+                }
+            }
+        
+        # Kiểm tra có request_id không
+        if not team.request_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Không thể xác thực thanh toán. Vui lòng thử tạo lại link thanh toán."
+            )
+        
+        logger.info(f"🔍 Manual verification requested for team {team.id}, order_id={order_id}")
+        
+        # Query MoMo để kiểm tra trạng thái
+        momo_response = momo_service.query_transaction(team.order_id, team.request_id)
+        
+        if not momo_response:
+            raise HTTPException(
+                status_code=500,
+                detail="Không thể kết nối đến MoMo để kiểm tra trạng thái"
+            )
+        
+        result_code = momo_response.get("resultCode")
+        
+        # resultCode = 0 hoặc 9000 = thanh toán thành công
+        if result_code in [0, 9000]:
+            logger.info(f"✅ MoMo verification successful: orderId={order_id}")
+            
+            # Cập nhật trạng thái với race condition handling
+            from datetime import datetime
+            
+            try:
+                # Lock và đếm số đội đã confirm
+                confirmed_count = (
+                    db.query(func.count(Team.id))
+                    .filter(Team.status == TeamStatus.PAID_CONFIRMED)
+                    .with_for_update()
+                    .scalar()
+                )
+                
+                # Lock team hiện tại
+                team = (
+                    db.query(Team)
+                    .filter(Team.id == team.id)
+                    .with_for_update()
+                    .first()
+                )
+                
+                # Kiểm tra lại status (tránh duplicate update)
+                if not team.is_paid():
+                    if confirmed_count < Team.MAX_CONFIRMED_TEAMS:
+                        team.status = TeamStatus.PAID_CONFIRMED
+                        team.paid_at = datetime.now()
+                        db.commit()
+                        db.refresh(team)
+                        
+                        return {
+                            "success": True,
+                            "message": "Thanh toán thành công! Đội của bạn đã được xác nhận.",
+                            "data": {
+                                "order_id": team.order_id,
+                                "status": team.status.value,
+                                "paid_at": team.paid_at.isoformat(),
+                                "confirmed_count": confirmed_count + 1,
+                            }
+                        }
+                    else:
+                        team.status = TeamStatus.PAID_REJECTED
+                        team.paid_at = datetime.now()
+                        db.commit()
+                        db.refresh(team)
+                        
+                        return {
+                            "success": False,
+                            "message": "Thanh toán thành công nhưng giải đấu đã đủ 16 đội.",
+                            "data": {
+                                "order_id": team.order_id,
+                                "status": team.status.value,
+                                "paid_at": team.paid_at.isoformat(),
+                            }
+                        }
+                else:
+                    # Đã được xử lý rồi
+                    return {
+                        "success": True,
+                        "message": "Đội này đã được xác nhận thanh toán trước đó.",
+                        "data": {
+                            "order_id": team.order_id,
+                            "status": team.status.value,
+                            "paid_at": team.paid_at.isoformat() if team.paid_at else None,
+                        }
+                    }
+                
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Error updating team status: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Có lỗi khi cập nhật trạng thái đội"
+                )
+        
+        # Chưa thanh toán hoặc thanh toán thất bại
+        return {
+            "success": False,
+            "message": f"Thanh toán chưa thành công. {momo_response.get('message', '')}",
+            "data": {
+                "order_id": team.order_id,
+                "status": team.status.value,
+                "momo_result_code": result_code,
+                "momo_message": momo_response.get("message", ""),
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Verify payment error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Có lỗi xảy ra khi xác thực thanh toán"
         )
 
 

@@ -70,6 +70,7 @@ class Team(Base):
     
     # Thanh toán
     order_id = Column(String(100), unique=True, nullable=False, index=True, comment="Mã đơn hàng MoMo duy nhất")
+    request_id = Column(String(100), nullable=True, index=True, comment="Request ID MoMo để query transaction")
     amount = Column(Numeric(10, 2), default=0, nullable=False, comment="Số tiền đăng ký")
     status = Column(
         Enum(TeamStatus, name="team_status", create_type=True),
