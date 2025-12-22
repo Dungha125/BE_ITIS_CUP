@@ -39,6 +39,11 @@ class MomoService:
         
         # Log config (không log secret_key)
         logger.info(f"MoMo Service initialized: api_url={self.api_url}, partner_code={self.partner_code[:4]}..., has_secret_key={bool(self.secret_key)}")
+        logger.info(f"MoMo URLs: return_url={self.return_url}, notify_url={self.notify_url}")
+        
+        # Cảnh báo nếu IPN URL không được set
+        if not self.notify_url:
+            logger.warning("⚠️  MOMO_NOTIFY_URL is not set! IPN webhook will not work!")
 
     def create_payment_link(
         self,
@@ -72,6 +77,14 @@ class MomoService:
 
             # Sử dụng return_url từ parameter hoặc mặc định
             redirect_url = return_url if return_url else self.return_url
+
+            # Đảm bảo IPN URL không rỗng
+            if not self.notify_url:
+                logger.error("MOMO_NOTIFY_URL is not set! IPN will not work.")
+                raise ValueError("MOMO_NOTIFY_URL environment variable is required")
+
+            # Log IPN URL để debug
+            logger.info(f"Using IPN URL: {self.notify_url}")
 
             # Tạo raw signature string
             raw_signature = (
@@ -112,7 +125,9 @@ class MomoService:
             }
 
             # Gửi request đến MoMo API
-            logger.info(f"Calling MoMo API: order_id={order_id}, amount={amount}, return_url={redirect_url}")
+            logger.info(f"Calling MoMo API: order_id={order_id}, amount={amount}, return_url={redirect_url}, ipn_url={self.notify_url}")
+            logger.info(f"MoMo Request Body (without signature): { {k: v for k, v in request_body.items() if k != 'signature'} }")
+            
             with httpx.Client(timeout=30.0) as client:
                 response = client.post(self.api_url, json=request_body)
 

@@ -2,7 +2,7 @@
 Router: Tournament
 Xử lý các API liên quan đến đăng ký giải đấu và thanh toán MoMo
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
@@ -119,7 +119,10 @@ async def register_team(
             # Tạo return URL động dựa trên origin của request
             return_url = os.getenv('MOMO_RETURN_URL', 'http://localhost:3000/itiscup/payment/callback')
             
-            logger.info(f"Creating payment link for team {team.id}, order_id: {team.order_id}, amount: {team.amount}")
+            # Lấy IPN URL từ env và log để debug
+            ipn_url = os.getenv('MOMO_NOTIFY_URL', '')
+            logger.info(f"Creating payment link for team {team.id}, order_id: {team.order_id}, amount: {team.amount}, return_url: {return_url}, ipn_url: {ipn_url}")
+            
             payment_data = momo_service.create_payment_link(
                 team.order_id,
                 int(team.amount),
@@ -216,6 +219,10 @@ async def create_momo_payment(
         
         # Tạo return URL động
         return_url = os.getenv('MOMO_RETURN_URL', 'http://localhost:3000/itiscup/payment/callback')
+        
+        # Lấy IPN URL từ env và log để debug
+        ipn_url = os.getenv('MOMO_NOTIFY_URL', '')
+        logger.info(f"Creating payment link: order_id={new_order_id}, return_url={return_url}, ipn_url={ipn_url}")
 
         # Tạo payment link từ MoMo với order_id mới
         payment_data = momo_service.create_payment_link(
@@ -257,7 +264,7 @@ async def create_momo_payment(
 
 @router.post("/momo-ipn")
 async def momo_ipn(
-    data: dict,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """
@@ -270,29 +277,47 @@ async def momo_ipn(
     - Chỉ 16 đội đầu tiên được confirm, các đội sau bị reject
     """
     try:
+        # Lấy data từ request body
+        data = await request.json()
+        logger.info(f"MoMo IPN received: orderId={data.get('orderId')}, resultCode={data.get('resultCode')}")
+        
         # Validate IPN data
         validation = momo_service.validate_ipn(data)
 
         if not validation["valid"]:
             logger.warning(f"MoMo IPN: Invalid data - {data}")
-            return {"resultCode": 1, "message": "Invalid data"}
+            # MoMo yêu cầu HTTP 204 (No Content) - không có body
+            return Response(status_code=204)
 
-        # Kiểm tra resultCode (0 = thanh toán thành công)
-        if validation["resultCode"] != 0:
+        # Kiểm tra resultCode 
+        # 0 = thanh toán thành công
+        # 9000 = authorization thành công (cũng coi là thành công)
+        # Khác 0 và 9000 = thất bại
+        if validation["resultCode"] not in [0, 9000]:
             logger.info(
                 f"MoMo IPN: Payment failed - "
                 f"orderId={validation['orderId']}, "
                 f"resultCode={validation['resultCode']}, "
                 f"message={validation['message']}"
             )
-            return {"resultCode": 0, "message": "OK"}
+            # Vẫn trả về 204 vì đây là notification, không phải error
+            return Response(status_code=204)
+        
+        # Log khi thanh toán thành công
+        logger.info(
+            f"MoMo IPN: Payment successful - "
+            f"orderId={validation['orderId']}, "
+            f"resultCode={validation['resultCode']}, "
+            f"amount={validation['amount']}"
+        )
 
         # Tìm đội theo order_id
         team = db.query(Team).filter(Team.order_id == validation["orderId"]).first()
 
         if not team:
             logger.warning(f"MoMo IPN: Team not found - orderId={validation['orderId']}")
-            return {"resultCode": 1, "message": "Team not found"}
+            # Trả về 204 vì đây là notification, không phải error
+            return Response(status_code=204)
 
         # Kiểm tra số tiền
         if validation["amount"] != int(team.amount):
@@ -302,7 +327,8 @@ async def momo_ipn(
                 f"expected={team.amount}, "
                 f"received={validation['amount']}"
             )
-            return {"resultCode": 1, "message": "Amount mismatch"}
+            # Trả về 204 vì đây là notification, không phải error
+            return Response(status_code=204)
 
         # Xử lý race condition với database transaction và SELECT FOR UPDATE
         # SQLAlchemy sử dụng with_for_update() để lock row
@@ -334,7 +360,8 @@ async def momo_ipn(
                     f"status={team.status.value}"
                 )
                 db.commit()
-                return {"resultCode": 0, "message": "OK"}
+                # MoMo yêu cầu HTTP 204 (No Content)
+                return Response(status_code=204)
 
             # Quyết định trạng thái dựa trên số lượng đội đã confirm
             if confirmed_count < Team.MAX_CONFIRMED_TEAMS:
@@ -371,20 +398,61 @@ async def momo_ipn(
 
         except Exception as e:
             db.rollback()
-            raise e
+            logger.error(f"MoMo IPN: Database error - {str(e)}", exc_info=True)
+            # Vẫn trả về 204 để MoMo không retry
+            return Response(status_code=204)
 
-        # Trả về success cho MoMo
-        return {"resultCode": 0, "message": "OK"}
+        # MoMo yêu cầu HTTP 204 (No Content) - không có body
+        return Response(status_code=204)
 
     except Exception as e:
         logger.error(
             f"MoMo IPN Processing Error: {str(e)}",
             exc_info=True,
-            extra={"request": data}
+            extra={"request": data if 'data' in locals() else {}}
         )
 
-        # Vẫn trả về success để MoMo không retry (nếu cần xử lý lại sau)
-        return {"resultCode": 0, "message": "OK"}
+        # MoMo yêu cầu HTTP 204 (No Content) - vẫn trả về 204 để MoMo không retry
+        return Response(status_code=204)
+
+
+@router.get("/team-status/{order_id}")
+async def get_team_status_by_order_id(
+    order_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Lấy trạng thái đội theo order_id (public endpoint để check sau thanh toán)
+    GET /api/tournament/team-status/{order_id}
+    """
+    try:
+        team = db.query(Team).filter(Team.order_id == order_id).first()
+        
+        if not team:
+            raise HTTPException(
+                status_code=404,
+                detail="Không tìm thấy đội với order_id này"
+            )
+        
+        return {
+            "success": True,
+            "data": {
+                "team_id": team.id,
+                "team_name": team.team_name,
+                "order_id": team.order_id,
+                "status": team.status.value,
+                "paid_at": team.paid_at.isoformat() if team.paid_at else None,
+                "created_at": team.created_at.isoformat(),
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get team status error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Có lỗi xảy ra khi lấy trạng thái đội"
+        )
 
 
 @router.get("/my-teams", response_model=TeamsListResponse)
