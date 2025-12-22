@@ -21,7 +21,7 @@ from app.schemas import (
     CreatePaymentRequest,
 )
 from app.services.momo_service import MomoService
-from app.routers.auth import get_current_user_id_optional, get_current_user_id
+from app.routers.auth import get_current_user_id_optional, get_current_user_id, get_current_admin_user
 from typing import Optional
 
 router = APIRouter(prefix="/tournament", tags=["tournament"])
@@ -504,5 +504,46 @@ async def get_teams(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=500,
             detail="Có lỗi xảy ra khi lấy danh sách đội"
+        )
+
+
+@router.delete("/teams/{team_id}")
+async def delete_team(
+    team_id: int,
+    admin_user = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Xóa một đội (chỉ admin)
+    DELETE /api/tournament/teams/{team_id}
+    """
+    try:
+        team = db.query(Team).filter(Team.id == team_id).first()
+        
+        if not team:
+            raise HTTPException(
+                status_code=404,
+                detail="Không tìm thấy đội"
+            )
+        
+        # Xóa đội
+        db.delete(team)
+        db.commit()
+        
+        logger.info(f"Admin {admin_user.username} (ID: {admin_user.id}) deleted team {team_id} ({team.team_name})")
+        
+        return {
+            "success": True,
+            "message": "Xóa đội thành công"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Delete Team Error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Có lỗi xảy ra khi xóa đội"
         )
 
