@@ -381,16 +381,7 @@ async def momo_ipn(
         from datetime import datetime
 
         try:
-            # Bắt đầu transaction
-            # Lock tất cả các row có status PAID_CONFIRMED để đếm chính xác
-            confirmed_count = (
-                db.query(func.count(Team.id))
-                .filter(Team.status == TeamStatus.PAID_CONFIRMED)
-                .with_for_update()
-                .scalar()
-            )
-
-            # Lock team hiện tại để cập nhật
+            # Lock team hiện tại để cập nhật trước
             team = (
                 db.query(Team)
                 .filter(Team.id == team.id)
@@ -408,6 +399,16 @@ async def momo_ipn(
                 db.commit()
                 # MoMo yêu cầu HTTP 204 (No Content)
                 return Response(status_code=204)
+
+            # Query tất cả teams đã confirmed (không dùng aggregate với FOR UPDATE)
+            # Đếm trong Python thay vì SQL
+            confirmed_teams = (
+                db.query(Team.id)
+                .filter(Team.status == TeamStatus.PAID_CONFIRMED)
+                .with_for_update()
+                .all()
+            )
+            confirmed_count = len(confirmed_teams)
 
             # Quyết định trạng thái dựa trên số lượng đội đã confirm
             if confirmed_count < Team.MAX_CONFIRMED_TEAMS:
@@ -497,15 +498,7 @@ async def get_team_status_by_order_id(
                 from datetime import datetime
                 
                 try:
-                    # Lock và đếm số đội đã confirm
-                    confirmed_count = (
-                        db.query(func.count(Team.id))
-                        .filter(Team.status == TeamStatus.PAID_CONFIRMED)
-                        .with_for_update()
-                        .scalar()
-                    )
-                    
-                    # Lock team hiện tại
+                    # Lock team hiện tại trước
                     team = (
                         db.query(Team)
                         .filter(Team.id == team.id)
@@ -515,6 +508,16 @@ async def get_team_status_by_order_id(
                     
                     # Kiểm tra lại status (tránh duplicate update)
                     if not team.is_paid():
+                        # Query tất cả teams đã confirmed (không dùng aggregate với FOR UPDATE)
+                        # Đếm trong Python thay vì SQL
+                        confirmed_teams = (
+                            db.query(Team.id)
+                            .filter(Team.status == TeamStatus.PAID_CONFIRMED)
+                            .with_for_update()
+                            .all()
+                        )
+                        confirmed_count = len(confirmed_teams)
+                        
                         if confirmed_count < Team.MAX_CONFIRMED_TEAMS:
                             team.status = TeamStatus.PAID_CONFIRMED
                             team.paid_at = datetime.now()
@@ -614,15 +617,7 @@ async def verify_payment_status(
             from datetime import datetime
             
             try:
-                # Lock và đếm số đội đã confirm
-                confirmed_count = (
-                    db.query(func.count(Team.id))
-                    .filter(Team.status == TeamStatus.PAID_CONFIRMED)
-                    .with_for_update()
-                    .scalar()
-                )
-                
-                # Lock team hiện tại
+                # Lock team hiện tại trước
                 team = (
                     db.query(Team)
                     .filter(Team.id == team.id)
@@ -632,6 +627,16 @@ async def verify_payment_status(
                 
                 # Kiểm tra lại status (tránh duplicate update)
                 if not team.is_paid():
+                    # Query tất cả teams đã confirmed (không dùng aggregate với FOR UPDATE)
+                    # Đếm trong Python thay vì SQL
+                    confirmed_teams = (
+                        db.query(Team.id)
+                        .filter(Team.status == TeamStatus.PAID_CONFIRMED)
+                        .with_for_update()
+                        .all()
+                    )
+                    confirmed_count = len(confirmed_teams)
+                    
                     if confirmed_count < Team.MAX_CONFIRMED_TEAMS:
                         team.status = TeamStatus.PAID_CONFIRMED
                         team.paid_at = datetime.now()
