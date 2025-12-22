@@ -22,9 +22,14 @@ COPY . .
 # Create directory for uploads
 RUN mkdir -p uploads/teams/members
 
-# Expose port (Railway sẽ tự động set PORT env var)
-EXPOSE 8000
+# Copy startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
-# Run migrations and start server
-CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Expose port (Railway sẽ tự động set PORT env var)
+# Railway thường dùng port 8080, nhưng sẽ set PORT env var
+EXPOSE 8080
+
+# Run startup script
+CMD ["/app/start.sh"]
 
