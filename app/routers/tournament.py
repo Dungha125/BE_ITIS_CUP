@@ -117,7 +117,7 @@ async def register_team(
         try:
             order_info = f"Đăng ký giải đấu ITISCUP - {team.team_name}"
             # Tạo return URL động dựa trên origin của request
-            return_url = os.getenv('MOMO_RETURN_URL', 'http://localhost:3000/itiscup/payment/callback')
+            return_url = os.getenv('MOMO_RETURN_URL', 'https://www.lcdkhoacntt1.com/itiscup/payment/callback')
             
             # Lấy IPN URL từ env và log để debug
             ipn_url = os.getenv('MOMO_NOTIFY_URL', '')
@@ -226,7 +226,7 @@ async def create_momo_payment(
         order_info = f"Đăng ký giải đấu ITISCUP - {team.team_name}"
         
         # Tạo return URL động
-        return_url = os.getenv('MOMO_RETURN_URL', 'http://localhost:3000/itiscup/payment/callback')
+        return_url = os.getenv('MOMO_RETURN_URL', 'https://www.lcdkhoacntt1.com/itiscup/payment/callback')
         
         # Lấy IPN URL từ env và log để debug
         ipn_url = os.getenv('MOMO_NOTIFY_URL', '')
