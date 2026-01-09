@@ -40,6 +40,7 @@ async def register_team(
     vice_leader_student_id: str = Form(...),
     vice_leader_phone: str = Form(...),
     members_list_text: Optional[str] = Form(None),
+    members_list_drive_link: Optional[str] = Form(None),  # Thêm field để nhận Google Drive link
     amount: Optional[float] = Form(None),  # Optional, sẽ set mặc định nếu không có
     members_list_file: Optional[UploadFile] = File(None),
     user_id: Optional[int] = Depends(get_current_user_id_optional),  # Optional: có thể đăng ký không cần login
@@ -82,6 +83,13 @@ async def register_team(
 
             members_list_file_path = file_path
 
+        # Xử lý members_list_text: ưu tiên members_list_drive_link nếu có, sau đó mới dùng members_list_text
+        final_members_list_text = members_list_text
+        if members_list_drive_link:
+            final_members_list_text = members_list_drive_link
+        elif not members_list_text:
+            final_members_list_text = None
+
         # Số tiền cố định: 10.000 VND
         fixed_amount = 10000.0
         if amount is not None:
@@ -98,7 +106,7 @@ async def register_team(
             vice_leader_student_id=vice_leader_student_id,
             vice_leader_phone=vice_leader_phone,
             members_list_file=members_list_file_path,
-            members_list_text=members_list_text,
+            members_list_text=final_members_list_text,  # Lưu Google Drive link vào đây
             order_id=order_id,
             amount=fixed_amount,
             status=TeamStatus.REGISTERED,
@@ -750,6 +758,7 @@ async def get_my_teams(
                 "vice_leader_phone": team.vice_leader_phone,
                 "members_list_file": team.members_list_file,
                 "members_list_text": team.members_list_text,
+                "members_list_drive_link": team.members_list_text,  # Trả về members_list_text như members_list_drive_link
                 "order_id": team.order_id,
                 "amount": float(team.amount),
                 "status": team.status.value,
@@ -802,6 +811,7 @@ async def get_teams(db: Session = Depends(get_db)):
                 "vice_leader_phone": team.vice_leader_phone,
                 "members_list_file": team.members_list_file,
                 "members_list_text": team.members_list_text,
+                "members_list_drive_link": team.members_list_text,  # Trả về members_list_text như members_list_drive_link
                 "order_id": team.order_id,
                 "amount": float(team.amount),
                 "status": team.status.value,
