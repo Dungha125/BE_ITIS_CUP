@@ -22,6 +22,7 @@ RegisterTeamResponse = schemas_py_module.RegisterTeamResponse
 CreatePaymentResponse = schemas_py_module.CreatePaymentResponse
 TeamsListResponse = schemas_py_module.TeamsListResponse
 MomoIpnRequest = schemas_py_module.MomoIpnRequest
+StatusUpdateSchema = schemas_py_module.StatusUpdateSchema
 # Note: MomoIpnResponse does not exist in schemas.py, only MomoIpnRequest
 
 # Export auth schemas from auth.py in this package
