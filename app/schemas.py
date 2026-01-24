@@ -86,3 +86,8 @@ class MomoIpnRequest(BaseModel):
     extraData: str
     signature: str
 
+
+class StatusUpdateSchema(BaseModel):
+    """Request schema cho cập nhật trạng thái đội (admin only)"""
+    status: TeamStatus = Field(..., description="Trạng thái mới: REGISTERED, PAID_CONFIRMED, hoặc PAID_REJECTED")
+

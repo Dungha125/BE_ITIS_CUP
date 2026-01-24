@@ -19,6 +19,7 @@ from app.schemas import (
     CreatePaymentResponse,
     TeamsListResponse,
     CreatePaymentRequest,
+    StatusUpdateSchema,
 )
 from app.services.momo_service import MomoService
 from app.routers.auth import get_current_user_id_optional, get_current_user_id, get_current_admin_user
@@ -837,6 +838,74 @@ async def get_teams(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=500,
             detail="Có lỗi xảy ra khi lấy danh sách đội"
+        )
+
+
+@router.patch("/teams/{team_id}/status")
+async def update_team_status(
+    team_id: int,
+    status_update: StatusUpdateSchema,
+    admin_user = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Cập nhật trạng thái thanh toán của đội (chỉ admin)
+    PATCH /api/tournament/teams/{team_id}/status
+    """
+    try:
+        from datetime import datetime
+        
+        # Tìm team
+        team = db.query(Team).filter(Team.id == team_id).first()
+        if not team:
+            raise HTTPException(
+                status_code=404,
+                detail="Không tìm thấy đội với ID này"
+            )
+        
+        # Validate status
+        old_status = team.status
+        new_status = status_update.status
+        
+        # Cập nhật status
+        team.status = new_status
+        
+        # Nếu chuyển sang PAID_CONFIRMED hoặc PAID_REJECTED, cập nhật paid_at
+        if new_status in [TeamStatus.PAID_CONFIRMED, TeamStatus.PAID_REJECTED] and not team.paid_at:
+            team.paid_at = datetime.now()
+        
+        # Nếu chuyển từ PAID_CONFIRMED/PAID_REJECTED về REGISTERED, xóa paid_at
+        if new_status == TeamStatus.REGISTERED and team.paid_at:
+            team.paid_at = None
+        
+        # Lưu vào database
+        db.commit()
+        db.refresh(team)
+        
+        logger.info(
+            f"Admin {admin_user.username} (ID: {admin_user.id}) updated team {team_id} ({team.team_name}) "
+            f"status from {old_status.value} to {new_status.value}"
+        )
+        
+        return {
+            "success": True,
+            "message": "Cập nhật trạng thái thành công",
+            "data": {
+                "team_id": team.id,
+                "team_name": team.team_name,
+                "status": team.status.value,
+                "updated_at": team.updated_at.isoformat() if team.updated_at else None
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Update Team Status Error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Có lỗi xảy ra khi cập nhật trạng thái đội"
         )
 
 
